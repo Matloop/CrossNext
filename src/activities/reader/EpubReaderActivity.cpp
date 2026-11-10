@@ -51,6 +51,7 @@
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/settings/TextSettingsActivity.h"
+#include "apps_local/blend/BlendLink.h"
 #include "apps_local/readertext/BookSearchActivity.h"
 #include "apps_local/reading/ReadingStatsActivity.h"
 #include "apps_local/ui/Rotation.h"
@@ -711,7 +712,7 @@ void EpubReaderActivity::loop() {
   // open, so the timer must neither flip the page under it nor eat the panel's next
   // Confirm/Back release.
   if (overlay != Overlay::None) {
-    if (usesToolbarMenu() || overlay == Overlay::Text) {
+    if (usesToolbarMenu() || overlay == Overlay::Text || overlay == Overlay::Blend) {
       // Hold the interval at zero elapsed so closing the panel starts a fresh one.
       lastPageTurnTime = millis();
       handleOverlayInput();
@@ -858,7 +859,19 @@ void EpubReaderActivity::loop() {
       const auto* link = EpubReaderUtils::linkAtPoint(currentPageLinks, touchX, touchY, currentPageLinkMarginLeft,
                                                       currentPageLinkMarginTop);
       if (link) {
-        navigateToHref(link->href, true);
+        blend::BlendGloss gloss;
+        if (blend::parseBlendHref(link->href, gloss)) {
+          const int toc = epub->getTocIndexForSpineIndex(currentSpineIndex);
+          blendFooter.open(gloss, touchY,
+                           {epub->getPath().c_str(), epub->getTitle().c_str(), epub->getAuthor().c_str(),
+                            toc >= 0 ? epub->getTocItem(toc).title.c_str() : "", epub->getLanguage().c_str(),
+                            static_cast<uint16_t>(currentSpineIndex),
+                            static_cast<uint16_t>(section ? section->currentPage : 0),
+                            currentPageVisibleOffset.value_or(UINT32_MAX)});
+          openOverlay(Overlay::Blend);
+        } else {
+          navigateToHref(link->href, true);
+        }
         haptic_feedback::touchAction();
         return;
       }
@@ -2034,7 +2047,7 @@ void EpubReaderActivity::renderBook() {
   pageReadyAt = millis();
 
   // Toolbar menu: overlay the toolbar / panel on top of the freshly rendered page.
-  if (overlay != Overlay::None && (usesToolbarMenu() || overlay == Overlay::Text)) {
+  if (overlay != Overlay::None && (usesToolbarMenu() || overlay == Overlay::Text || overlay == Overlay::Blend)) {
     // The page just re-rendered under the overlay: refresh the snapshot that
     // backs panel->toolbar restores (any previous copy is stale).
     overlayPageStored = renderer.storeBwBuffer();
@@ -2735,6 +2748,10 @@ void EpubReaderActivity::closeOverlayToPage() {
 
 void EpubReaderActivity::renderOverlay() {
   if (!epub || !section || !toolbarUi) return;
+  if (overlay == Overlay::Blend) {
+    blendFooter.paint(renderer);
+    return;
+  }
 
   auto& model = overlayModel;
   model = {};
@@ -3132,6 +3149,13 @@ void EpubReaderActivity::handleOverlayInput() {
     // down -- the shape the device hung in on 2026-09-20 with "Exiting
     // activity: EpubReader" as its last word.
     overlayRefreshPending = false;
+  }
+
+  if (overlay == Overlay::Blend) {
+    const auto blendResult = blendFooter.handleInput(mappedInput);
+    if (blendResult == blend::BlendFooter::Result::Close) closeOverlayToPage();
+    if (blendResult == blend::BlendFooter::Result::Redraw) openOverlay(Overlay::Blend);
+    return;
   }
 
   // A modal option picker over the panel owns all input while open.

@@ -18,6 +18,7 @@
 #include "ProgressMapper.h"
 #include "ReaderActivity.h"
 #include "ReaderToolbarUi.h"
+#include "apps_local/blend/BlendFooter.h"
 #include "components/OptionPopup.h"
 
 namespace vocabulary {
@@ -85,8 +86,9 @@ class EpubReaderActivity final : public ReaderActivity {
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
   // over the page instead of pushing the full-screen list menu. Select opens the
   // Toolbar; its tools open the Contents/Text/More bottom-sheet panels.
-  enum class Overlay { None, Toolbar, Contents, Text, More };
+  enum class Overlay { None, Toolbar, Contents, Text, More, Blend };
   Overlay overlay = Overlay::None;
+  blend::BlendFooter blendFooter;  // Overlay::Blend: footer for a tapped blend word
   int focusedTool = 0;  // toolbar tool focus: 0=Contents, 1=Text, 2=More
   int panelIndex = 0;   // selected row within the active panel
   // Panel list navigation: a tap steps one row, a hold jumps PANEL_HOLD_STEP rows in one go
